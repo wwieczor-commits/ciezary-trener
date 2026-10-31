@@ -1,0 +1,47 @@
+/* ---------- raport (jasny dokument) – ten sam styl trafia do pliku eksportu ---------- */
+#report{background:#fff;color:#222121;border-radius:12px;padding:18px;margin-top:10px;font-size:13px;font-family:-apple-system,BlinkMacSystemFont,'Inter',system-ui,'Segoe UI',Roboto,Arial,sans-serif;line-height:1.4}
+#report h1{font-size:18px;margin:0}
+#report h3{font-size:12.5px;text-transform:uppercase;letter-spacing:1px;color:#5b6676;border-bottom:2px solid #12958A;padding-bottom:4px;margin:20px 0 8px}
+#report .tw{overflow-x:auto;-webkit-overflow-scrolling:touch}
+#report table{width:100%;border-collapse:collapse;font-size:12.5px}
+#report th,#report td{border-bottom:1px solid #e3e7ec;padding:6px;text-align:right;vertical-align:top}
+#report th:first-child,#report td:first-child{text-align:left}
+#report td.l,#report th.l{text-align:left}
+#report th{background:#f4f6f8;font-weight:600;color:#475263}
+#report .rh{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;border-bottom:1px solid #e3e7ec;padding-bottom:12px}
+#report .rh .logo{display:flex;flex-direction:column;gap:2px;color:#1b2430}
+#report .rh .logo svg,#report .rh .logo img{height:30px;width:auto;display:block}
+
+#report .rh .logo .sub{font-size:9px;letter-spacing:2.4px;text-transform:uppercase;color:#7a8594;font-weight:600}
+#report .kv{display:grid;grid-template-columns:repeat(2,1fr);gap:6px 14px}
+#report .kv div span{display:block;color:#7a8594;font-size:10.5px;text-transform:uppercase;letter-spacing:.7px}
+#report .tag{display:inline-block;padding:2px 7px;border-radius:6px;font-size:11.5px;font-weight:600;white-space:nowrap}
+#report .t-ok{background:#dcfce7;color:#166534}
+#report .t-warn{background:#fef3c7;color:#92400e}
+#report .t-bad{background:#fee2e2;color:#991b1b}
+#report .t-na{background:#eef0f3;color:#5b6676}
+#report .sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}
+#report .fitc{border:1px solid #e3e7ec;border-radius:12px;padding:10px 12px;background:#fafbfc}
+#report .fitc .t{font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;color:#7a8594;font-weight:600}
+#report .fitc .v{font-size:24px;font-weight:800;letter-spacing:-.5px;margin:2px 0;white-space:nowrap}
+#report .fitc .d{font-size:11.5px;color:#5b6676;margin-top:2px}
+#report .fitc.ch{border-color:#12958A;background:#E6F7F5}
+#report .fitc.ch .v{color:#12958A}
+#report .main{border-left:4px solid #12958A;background:#E6F7F5;border-radius:8px;padding:10px 12px;margin-top:10px;font-size:14px}
+#report .main b{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;color:#5b6676;margin-bottom:2px}
+#report .charts{display:grid;grid-template-columns:1fr;gap:12px}
+#report .charts svg{width:100%;height:auto;display:block;border:1px solid #e3e7ec;border-radius:8px;background:#fff}
+#report .imgs{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+#report .imgs figure{margin:0}
+#report .rh h1{font-family:Archivo,'Helvetica Neue',Arial,sans-serif;font-style:italic;font-weight:900}
+#report .rh .logo svg{height:30px;width:auto;display:block}
+#report .rh .logo svg path{fill:#12958A}
+@media print{
+  body{background:#fff!important}
+  body>*:not(main):not(#report){display:none!important}
+  main>*:not(#page-report){display:none!important}
+  #page-report>*:not(#reportBox){display:none!important}
+  #reportBox>*:not(#report){display:none!important}
+  #report{padding:0;margin:0;border-radius:0}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}

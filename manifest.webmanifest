@@ -1,0 +1,19 @@
+{
+  "name": "Ciężary · Trener techniki",
+  "short_name": "Ciężary Trener",
+  "description": "Głosowy trener techniki ze sztangą: kamera lub film, liczenie powtórzeń, ocena techniki, prędkość gryfu, raport PDF. Autor: Wojciech Wieczorek.",
+  "lang": "pl",
+  "start_url": "./index.html?source=pwa",
+  "scope": "./",
+  "id": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#232222",
+  "theme_color": "#232222",
+  "categories": ["health", "fitness", "sports"],
+  "icons": [
+    { "src": "assets/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
