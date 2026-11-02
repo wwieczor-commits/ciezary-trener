@@ -82,7 +82,7 @@ export function reportHTML(set, opt = {}) {
     const withImg = reps.filter(r => r.snap);
     if (withImg.length) {
       const best = [...withImg].sort((a, b) => b.score - a.score || a.n - b.n)[0], worstR = [...withImg].sort((a, b) => a.score - b.score || b.n - a.n)[0];
-      h += `<h3>Najlepsze i najsłabsze powtórzenie</h3><div class="imgs"><figure><img src="${best.snap}" alt=""><figcaption>Najlepsze: nr ${best.n}, ${best.score} pkt</figcaption></figure>${worstR !== best ? `<figure><img src="${worstR.snap}" alt=""><figcaption>Najsłabsze: nr ${worstR.n}, ${worstR.score} pkt${worstR.main ? ' – ' + esc(worstR.main.cue.toLowerCase()) : ''}</figcaption></figure>` : ''}</div>`;
+      h += `<h3>Najlepsze i najsłabsze powtórzenie</h3><div class="imgs"><figure><img src="${best.snap}" alt=""><figcaption>Najlepsze: nr ${best.n}, ${best.score} pkt${best.snapPriv ? ' · tło rozmyte' : ''}</figcaption></figure>${worstR !== best ? `<figure><img src="${worstR.snap}" alt=""><figcaption>Najsłabsze: nr ${worstR.n}, ${worstR.score} pkt${worstR.snapPriv ? ' · tło rozmyte' : ''}${worstR.main ? ' – ' + esc(worstR.main.cue.toLowerCase()) : ''}</figcaption></figure>` : ''}</div>`;
     }
     h += `<h3>Wskazówki</h3><ul class="tips">${(S.tips.length ? S.tips : ['Technika w porządku. Pilnuj tego samego toru gryfu przy większym ciężarze.']).map(t => `<li>${esc(t)}</li>`).join('')}</ul>`;
   }
@@ -252,6 +252,7 @@ export async function makePdf(set, history, opt = {}) {
         const x0 = M + i * (iw + gap), [w, h] = dims[i]; doc.setDrawColor(C.line); doc.setLineWidth(.3); doc.addImage(r.snap, 'JPEG', x0, y, w, h, undefined, 'FAST'); doc.rect(x0, y, w, h, 'S');
         font('Inter', 'bold', 8.2, C.dark); txt(`${t}: nr ${r.n}, ${r.score} pkt`, x0, y + h + 4.6);
         if (t === 'Najsłabsze' && r.main) { font('Inter', 'normal', 7.4, C.grey); txt(doc.splitTextToSize(r.main.cue, iw)[0], x0, y + h + 8.6); }
+        if (r.snapPriv) { font('Inter', 'normal', 6.8, C.grey); txt('tło rozmyte (prywatność)', x0, y + h + (t === 'Najsłabsze' && r.main ? 12.4 : 8.6)); }
       });
       y += hmax + 14;
     }

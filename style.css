@@ -218,3 +218,8 @@ footer{max-width:1400px;margin:0 auto;padding:6px 16px 22px;color:var(--dim);fon
   .fields{grid-template-columns:1.4fr 1fr 1fr}
 }
 @media (max-height:520px) and (orientation:landscape){.stage{max-height:92vh;aspect-ratio:auto;height:80vh}}
+
+/* prywatność: przycisk 🔒 i plakietka */
+.rbtn.priv[aria-pressed=true]{background:rgba(46,196,182,.88);border-color:transparent}
+.rbtn.priv[aria-pressed=false]{opacity:.75}
+.badge.priv{background:rgba(46,196,182,.9);color:#10201e;border-color:transparent}

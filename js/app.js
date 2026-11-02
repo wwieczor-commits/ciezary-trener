@@ -36,7 +36,7 @@ let ex = S.ex;
 let src = null, fileName = '', fileUrl = null, stream = null, facing = 'environment';
 let landmarker = null, PoseLandmarker = null, fileset = null, loadToken = 0;
 let running = false, lastVidTime = -1, lastTs = 0, fpsN = 0, fpsT = performance.now(), lastUi = 0;
-let pts = null, cur = null, person = null, maskOk = false, maskImg = null, nPeople = 0;
+let pts = null, cur = null, person = null, nPeople = 0;
 let setup = { ok: false, msg: '' }, setupSince = 0, setupKey = '', lastSeen = 0;
 let filters = makeFilters(+S.smooth);
 const fx = new FeatureExtractor();
@@ -163,7 +163,7 @@ async function loadModel() {
       catch (e) { console.warn('lokalna biblioteka niedostępna, CDN', e); m = await import(CDN.lib); wasm = CDN.wasm; }
       PoseLandmarker = m.PoseLandmarker; fileset = await m.FilesetResolver.forVisionTasks(wasm);
     }
-    const mk = (path, delegate) => PoseLandmarker.createFromOptions(fileset, { baseOptions: { modelAssetPath: path, delegate }, runningMode: 'VIDEO', numPoses: 3, outputSegmentationMasks: true, minPoseDetectionConfidence: .5, minPosePresenceConfidence: .5, minTrackingConfidence: .5 });
+    const mk = (path, delegate) => PoseLandmarker.createFromOptions(fileset, { baseOptions: { modelAssetPath: path, delegate }, runningMode: 'VIDEO', numPoses: 3, outputSegmentationMasks: !!S.blur, minPoseDetectionConfidence: .5, minPosePresenceConfidence: .5, minTrackingConfidence: .5 });
     const paths = [LOCAL.model(kind), CDN.model(kind)].filter(Boolean);
     let lm = null, dev = S.dev, err;
     for (const path of paths) {
@@ -222,7 +222,7 @@ function stopAll() {
   video.pause(); video.srcObject = null;
   if (fileUrl) { video.removeAttribute('src'); video.load(); URL.revokeObjectURL(fileUrl); fileUrl = null; }
   $('#vctl').hidden = true;
-  src = null; pts = null; cur = null; person = null; maskOk = false; nPeople = 0; plateOff();
+  src = null; pts = null; cur = null; person = null; PRIV.valid = false; nPeople = 0; plateOff();
   showStage(false); releaseWake(); updateRecBtn();
 }
 function openFile(f) {
@@ -300,8 +300,8 @@ function loop() {
     nPeople = L.length;
     const pk = L.length ? pickPerson(L, t, person) : { k: -1, person };
     person = pk.person;
-    if (pk.k >= 0) { lastSeen = performance.now(); updateMask(res.segmentationMasks?.[pk.k]); process(L[pk.k], w, h, t); }
-    else { pts = null; cur = null; maskOk = false; setup = { ok: false, msg: 'Nie widzę sylwetki – stań w kadrze' }; }
+    if (pk.k >= 0) { lastSeen = performance.now(); process(L[pk.k], w, h, t); if (S.blur) privBuild(res, pk.k, L[pk.k], w, h, video.currentTime); }
+    else { pts = null; cur = null; setup = { ok: false, msg: 'Nie widzę sylwetki – stań w kadrze' }; }
     res?.segmentationMasks?.forEach(m => { try { m.close(); } catch (e) {} });
     fpsN++;
   }
@@ -318,38 +318,105 @@ function loop() {
   if (now - lastUi > 120) { lastUi = now; updateUI(); if (src === 'file') updateFileBar(); }
 }
 
-/* ---------- maska ćwiczącego (rozmycie tła) ---------- */
-const maskCv = document.createElement('canvas'), mctx = maskCv.getContext('2d');
-const blurCv = document.createElement('canvas'), bctx = blurCv.getContext('2d');
-const personCv = document.createElement('canvas'), pctx = personCv.getContext('2d');
-function updateMask(m) {
-  maskOk = false;
-  if (!m || !S.blur) return;
-  try {
-    const W = m.width, H = m.height, a = m.getAsFloat32Array(), st = 4;
-    const mw = Math.ceil(W / st), mh = Math.ceil(H / st);
-    if (maskCv.width !== mw || maskCv.height !== mh) { maskCv.width = mw; maskCv.height = mh; maskImg = mctx.createImageData(mw, mh); }
-    const d = maskImg.data;
-    for (let y = 0; y < mh; y++) for (let x = 0; x < mw; x++) {
-      const v = a[(y * st) * W + x * st], o = (y * mw + x) * 4;
-      d[o] = d[o + 1] = d[o + 2] = 255; d[o + 3] = v > .5 ? 255 : v > .2 ? (v - .2) / .3 * 255 : 0;
+/* ---------- prywatność: rozmycie tła ----------
+   Podgląd, zrzuty do raportu i obrazy w PDF powstają z jednego płótna (#view), więc rozmycie robimy tutaj, zanim cokolwiek
+   z niego powstanie. Ostre zostaje: sylwetka śledzonej osoby (maska segmentacji PoseLandmarker, rozszerzona o margines),
+   „gruby szkielet” z punktów pozy, strefa wokół dłoni i nadgarstków oraz SZTANGA: talerz/gryf w miejscu śledzonego gryfu
+   i pas wzdłuż jego toru. Brak ważnej maski => cały kadr rozmyty (fail-closed). */
+const PRIV = { mk: null, tmp: null, mid: null, sm: null, tiny: null, tinyId: null, mw: 0, mh: 0, valid: false, vt: -1, t: 0, cov: 0,
+  filter: (() => { try { const c = document.createElement('canvas').getContext('2d'); c.filter = 'blur(2px)'; return c.filter === 'blur(2px)'; } catch (e) { return false; } })() };
+const privCv = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
+function privSize(w, h) {
+  const mw = Math.max(64, Math.round(w / 4)), mh = Math.max(36, Math.round(h / 4));
+  if (PRIV.mw === mw && PRIV.mh === mh) return;
+  PRIV.mw = mw; PRIV.mh = mh; PRIV.valid = false;
+  PRIV.mk = privCv(mw, mh); PRIV.tmp = privCv(mw, mh); PRIV.mid = privCv(mw, mh);
+  PRIV.sm = privCv(Math.max(16, Math.round(w / 16)), Math.max(10, Math.round(h / 16)));
+}
+function privMaskToTiny(m) {
+  const W = m.width, Hh = m.height, f = m.getAsFloat32Array();
+  const st = Math.max(1, Math.floor(W / 256)), tw = Math.floor(W / st), th = Math.floor(Hh / st);
+  if (!PRIV.tiny || PRIV.tiny.width !== tw || PRIV.tiny.height !== th) { PRIV.tiny = privCv(tw, th); PRIV.tinyId = null; }
+  const g = PRIV.tiny.getContext('2d'), id = PRIV.tinyId || (PRIV.tinyId = g.createImageData(tw, th)), d = id.data;
+  let on = 0;
+  for (let y = 0, i = 0; y < th; y++) { const row = y * st * W; for (let x = 0; x < tw; x++, i += 4) {
+    const v = f[row + x * st]; if (v > .5) on++; d[i] = d[i + 1] = d[i + 2] = 255; d[i + 3] = v < .25 ? 0 : v > .6 ? 255 : (v - .25) / .35 * 255; } }
+  g.putImageData(id, 0, 0); PRIV.cov = on / (tw * th); return PRIV.tiny;
+}
+function privBuild(res, k, lm, w, h, vt) {
+  privSize(w, h);
+  const { mk, tmp, mw, mh } = PRIV, g = mk.getContext('2d'), gt = tmp.getContext('2d'), kx = mw / w, ky = mh / h;
+  g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1; g.filter = 'none'; g.clearRect(0, 0, mw, mh);
+  const P = lm.map(p => ({ x: p.x * mw, y: p.y * mh, v: p.visibility ?? 1 }));
+  const vis = P.filter(p => p.v >= .3 && p.x > -mw * .2 && p.x < mw * 1.2);
+  let H = mh * .5;
+  if (vis.length >= 3) { const xs = vis.map(p => p.x), ys = vis.map(p => p.y); H = Math.max(Math.max(...ys) - Math.min(...ys), (Math.max(...xs) - Math.min(...xs)) * .7, mh * .15); }
+  // 1) maska śledzonej osoby (rozszerzona o margines)
+  let tiny = null;
+  try { const m = res && res.segmentationMasks && res.segmentationMasks[k]; if (m) tiny = privMaskToTiny(m); } catch (e) { if (!PRIV.warned) { PRIV.warned = 1; console.warn('maska segmentacji:', e); } }
+  if (tiny) {
+    gt.globalCompositeOperation = 'source-over'; gt.clearRect(0, 0, mw, mh); gt.imageSmoothingEnabled = true; gt.drawImage(tiny, 0, 0, mw, mh);
+    const r = Math.max(2, H * .045);
+    g.drawImage(tmp, 0, 0);
+    for (let q = 0; q < 12; q++) { const a = q / 12 * Math.PI * 2; g.drawImage(tmp, Math.cos(a) * r, Math.sin(a) * r); }
+    for (let q = 0; q < 8; q++) { const a = (q + .5) / 8 * Math.PI * 2; g.drawImage(tmp, Math.cos(a) * r * .5, Math.sin(a) * r * .5); }
+  }
+  // 2) „gruby szkielet” – gdyby maska była pusta/niepełna
+  g.strokeStyle = '#fff'; g.fillStyle = '#fff'; g.lineCap = 'round'; g.lineJoin = 'round'; g.lineWidth = Math.max(4, H * .11);
+  const ok = i => P[i] && P[i].v >= .3;
+  for (const [a, b] of BONES) if (ok(a) && ok(b)) { g.beginPath(); g.moveTo(P[a].x, P[a].y); g.lineTo(P[b].x, P[b].y); g.stroke(); }
+  if (ok(0)) { g.beginPath(); g.arc(P[0].x, P[0].y, H * .13, 0, 7); g.fill(); }
+  // 3) dłonie i nadgarstki: tu leży gryf – szeroka strefa wokół każdego punktu dłoni
+  for (const i of [15, 16, 17, 18, 19, 20, 21, 22, 27, 28, 29, 30, 31, 32]) if (ok(i)) { g.beginPath(); g.arc(P[i].x, P[i].y, H * (i < 23 ? .17 : .09), 0, 7); g.fill(); }
+  // 4) sztanga: talerz + gryf w miejscu śledzonego gryfu i pas wzdłuż toru
+  const bar = cur && cur.bar;
+  if (bar && isFinite(bar.x) && isFinite(bar.y)) {
+    const ppc = plate.ppc || (recording && samples.length ? curPpc() : null);
+    let rp = Math.max(H * .2, (plate.on ? plate.r * 1.35 : (ppc ? 22.5 * ppc * 1.3 : 0)) * kx);
+    rp = Math.min(rp, H * .6);
+    g.beginPath(); g.arc(bar.x * kx, bar.y * ky, rp, 0, 7); g.fill();
+    g.lineWidth = Math.max(4, H * .13); g.beginPath(); g.moveTo(bar.x * kx - H * .55, bar.y * ky); g.lineTo(bar.x * kx + H * .55, bar.y * ky); g.stroke();
+    if (recording && !cdEnd && samples.length > 1) {
+      g.lineWidth = rp * 2; g.beginPath();
+      for (let i = Math.max(0, samples.length - 240); i < samples.length; i++) { const sm = samples[i], x = sm.bx * kx, y = sm.by * ky; i === Math.max(0, samples.length - 240) ? g.moveTo(x, y) : g.lineTo(x, y); }
+      g.stroke();
     }
-    mctx.putImageData(maskImg, 0, 0); maskOk = true;
-  } catch (e) { console.warn(e); }
+  }
+  // 5) miękka krawędź
+  if (PRIV.filter) { gt.clearRect(0, 0, mw, mh); gt.globalCompositeOperation = 'copy'; gt.filter = 'blur(' + Math.max(1, H * .02).toFixed(1) + 'px)'; gt.drawImage(mk, 0, 0); gt.filter = 'none'; gt.globalCompositeOperation = 'source-over';
+    g.clearRect(0, 0, mw, mh); g.drawImage(tmp, 0, 0); }
+  PRIV.valid = true; PRIV.vt = vt; PRIV.t = performance.now();
+}
+/* rysuje klatkę do #view (wywoływane we wnętrzu transformacji lustra) */
+function privDraw(w, h, haveMask) {
+  privSize(w, h);
+  const { mid, sm, mw, mh } = PRIV, gm = mid.getContext('2d'), gs = sm.getContext('2d');
+  // tło: bardzo mała kopia klatki -> powiększona i wygładzona = silne rozmycie (działa też w Safari bez ctx.filter)
+  gs.imageSmoothingEnabled = true; gs.imageSmoothingQuality = 'high'; gs.clearRect(0, 0, sm.width, sm.height); gs.drawImage(video, 0, 0, sm.width, sm.height);
+  gm.globalCompositeOperation = 'source-over'; gm.imageSmoothingEnabled = true; gm.imageSmoothingQuality = 'high'; gm.clearRect(0, 0, mw, mh);
+  if (PRIV.filter) gm.filter = 'blur(8px)';
+  gm.drawImage(sm, 0, 0, mw, mh); gm.filter = 'none';
+  if (haveMask) { gm.globalCompositeOperation = 'destination-out'; gm.drawImage(PRIV.mk, 0, 0, mw, mh); gm.globalCompositeOperation = 'source-over'; }
+  ctx.drawImage(video, 0, 0, w, h);            // ostra klatka…
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(mid, 0, 0, w, h);              // …przykryta rozmytym tłem z „dziurą” na sylwetkę i sztangę
 }
 function drawFrame(w, h) {
-  const bw = Math.max(16, Math.round(w / 28)), bh = Math.max(9, Math.round(h / 28));
-  if (blurCv.width !== bw) { blurCv.width = bw; blurCv.height = bh; }
-  bctx.drawImage(video, 0, 0, bw, bh);
-  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(blurCv, 0, 0, w, h);
-  ctx.fillStyle = 'rgba(34,33,33,.25)'; ctx.fillRect(0, 0, w, h);
-  if (personCv.width !== w || personCv.height !== h) { personCv.width = w; personCv.height = h; }
-  pctx.globalCompositeOperation = 'source-over'; pctx.clearRect(0, 0, w, h);
-  pctx.drawImage(video, 0, 0, w, h);
-  pctx.globalCompositeOperation = 'destination-in'; pctx.drawImage(maskCv, 0, 0, w, h);
-  if (plate.on) { pctx.globalCompositeOperation = 'source-over'; pctx.save(); pctx.beginPath(); pctx.arc(plate.cx, plate.cy, plate.r * 1.15, 0, 7); pctx.clip(); pctx.drawImage(video, 0, 0, w, h); pctx.restore(); }
-  ctx.drawImage(personCv, 0, 0);
+  ctx.save(); if ($('#mirror').checked) { ctx.translate(w, 0); ctx.scale(-1, 1); }
+  if (!S.blur) ctx.drawImage(video, 0, 0, w, h);
+  else {
+    const fresh = PRIV.valid && (src === 'file' ? Math.abs(video.currentTime - PRIV.vt) < .25 : performance.now() - PRIV.t < 700);
+    privDraw(w, h, fresh);
+  }
+  ctx.restore();
+}
+function setPrivacy(on, quiet) {
+  S.blur = !!on; saveS(); PRIV.valid = false;
+  $('#blur').checked = S.blur; const b = $('#sPriv'); b.setAttribute('aria-pressed', String(S.blur)); b.title = 'Prywatność: rozmyj tło (' + (S.blur ? 'wł.' : 'wył.') + ')';
+  $('#bPriv').hidden = !(S.blur && src);
+  try { landmarker?.setOptions({ outputSegmentationMasks: S.blur }); } catch (e) { console.warn('setOptions', e); loadModel(); }
+  lastVidTime = -1;   // wymuś ponowne policzenie i narysowanie (także gdy film jest zatrzymany)
+  if (!quiet) toast(S.blur ? '🔒 Prywatność włączona – tło rozmyte w podglądzie i raporcie.' : 'Prywatność wyłączona – tło jest widoczne w podglądzie i raporcie.', 4000);
 }
 
 /* ---------- punkty → cechy → próbki ---------- */
@@ -505,7 +572,7 @@ function onLiveRep(seg, ppc) {
   const vBest = Math.max(0, ...liveReps.map(r => r.vel || 0)) || null;
   const rep = analyzeRep(samples, seg, ex, ppc, liveReps.length + 1);
   liveReps.push(rep);
-  if (snapCanvas?.width) try { snaps.push({ t: rep.tTurn, url: snapCanvas.toDataURL('image/jpeg', .72) }); } catch (e) {}
+  if (snapCanvas?.width) try { snaps.push({ t: rep.tTurn, url: snapCanvas.toDataURL('image/jpeg', .72), priv: !!S.blur }); } catch (e) {}
   snapBest = -1;
   const n = liveReps.length;
   cueText = rep.main ? rep.main.tip : `Powtórzenie ${n}: dobrze`; cueClass = rep.main ? rep.main.status : 'ok'; cueUntil = performance.now() + 6000;
@@ -628,7 +695,7 @@ function initSession() {
 function draw(w, h) {
   const mirror = $('#mirror').checked;
   ctx.save(); if (mirror) { ctx.translate(w, 0); ctx.scale(-1, 1); }
-  if (maskOk && S.blur) drawFrame(w, h); else ctx.drawImage(video, 0, 0, w, h);
+  drawFrame(w, h);
   ctx.restore();
   const MX = x => mirror ? w - x : x;
   const sc = Math.min(w, h) / 720, lw = 4 * sc, fs = Math.round(20 * sc), font = css('--head') || 'Archivo, sans-serif';
@@ -697,6 +764,7 @@ function draw(w, h) {
    ========================================================= */
 function setCue(t, c) { const el = $('#cue'); el.textContent = t; el.className = 'cue ' + (c || ''); }
 function updateUI() {
+  $('#bPriv').hidden = !(S.blur && src);
   const rb = $('#bRec');
   if (recording && !cdEnd) { rb.hidden = false; rb.textContent = `● SERIA ${f1(samples.length ? samples[samples.length - 1].t - samples[0].t : 0)} s`; } else rb.hidden = true;
   const hgt = +S.height || 178;
@@ -760,7 +828,9 @@ function initSettings() {
   $('#devSel').onchange = e => { S.dev = e.target.value; saveS(); loadModel(); };
   $('#smooth').onchange = e => { S.smooth = e.target.value; saveS(); resetFilters(); };
   $('#pname').onchange = e => { S.name = e.target.value.trim(); saveS(); };
-  $('#blur').onchange = e => { S.blur = e.target.checked; saveS(); };
+  $('#blur').onchange = e => setPrivacy(e.target.checked);
+  $('#sPriv').onclick = () => setPrivacy(!S.blur);
+  setPrivacy(S.blur, true);
   $('#swap').onchange = e => { S.swap = e.target.checked; saveS(); fx.reset(); };
   $('#plan').onchange = e => { S.plan = e.target.value.replace(/[^\d]/g, ''); e.target.value = S.plan; saveS(); renderLive(); };
   $('#sets').onchange = e => { S.coach.sets = clamp(parseInt(e.target.value) || 1, 1, 20); e.target.value = String(S.coach.sets); saveS(); updateSess(); updateRecBtn(); };
@@ -885,6 +955,8 @@ if (store.oldPending() && !sessionStorage.getItem('ct_oldtoast') && sessionStora
 /* hak do testów automatycznych (?test) */
 if (TEST) window.__ct = {
   voice, trainer, S, EX, store, analyzeRep, buildSetData, reportHTML, makePdf,
+  snapNow() { grabSnap(); return snapCanvas.toDataURL('image/jpeg', .72); },
+  PRIV, get cur() { return cur; }, get pts() { return pts; }, get src() { return src; }, setPrivacy, get landmarker() { return landmarker; },
   get samples() { return samples; }, get liveReps() { return liveReps; }, get sess() { return sess; }, get rest() { return rest; }, get recording() { return recording; }, get lastSet() { return lastSet; },
   fakeCam() { src = 'cam'; updateRecBtn(); updateSess(); },
   start() { startSet(); }, tick, finish() { finishSet(); return lastSet; }, openTab,

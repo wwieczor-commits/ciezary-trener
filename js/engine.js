@@ -357,7 +357,7 @@ export function buildSetData({ samples, ex, weight, plan, height, platePpc, snap
   if (!ppc) return null;
   const segs = segmentAll(samples, ex, ppc);
   const reps = segs.map((g, i) => analyzeRep(samples, g, ex, ppc, i + 1));
-  reps.forEach(r => { let b = null; for (const sn of snaps || []) if (!b || Math.abs(sn.t - r.tTurn) < Math.abs(b.t - r.tTurn)) b = sn; r.snap = b && Math.abs(b.t - r.tTurn) < 1.5 ? b.url : null; });
+  reps.forEach(r => { let b = null; for (const sn of snaps || []) if (!b || Math.abs(sn.t - r.tTurn) < Math.abs(b.t - r.tTurn)) b = sn; r.snap = b && Math.abs(b.t - r.tTurn) < 1.5 ? b.url : null; r.snapPriv = !!(r.snap && b.priv); });
   const barSrc = samples.filter(s => s.bs === 'p').length > samples.length / 2 ? 'p' : ex === 'squat' ? 's' : 'h';
   return { id: Date.now(), date: new Date().toISOString(), ex, weight: weight ? +weight : null, plan: plan || null, setNo: setNo || null, sets: sets || null,
     src, fileName, barSrc, ppc, plateScale: !!platePpc, height: +height, duration: samples[samples.length - 1].t - samples[0].t,

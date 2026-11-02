@@ -1,5 +1,5 @@
 /* Ciężary · Trener techniki – service worker (© Wojciech Wieczorek): powłoka aplikacji offline + cache bibliotek i modelu */
-const VERSION = 'v2';
+const VERSION = 'v3';
 const SHELL = `ciezary-shell-${VERSION}`;
 const LIBS = 'ciezary-libs-v1';
 const SHELL_FILES = [

@@ -42,7 +42,8 @@ Nowa wersja aplikacji „BikeRc Siła” (repozytorium `ci-ary-`, które pozosta
   sama zwalnia odtwarzanie na wolniejszych telefonach, żeby nie gubić klatek.
 - **Szkielet (MediaPipe PoseLandmarker)**: modele lite / full / heavy, GPU lub CPU (z automatycznym przejściem na CPU), wygładzanie (filtr One Euro).
   Biblioteka i modele lite/full są **w repozytorium** (praca offline); heavy pobierany jest z internetu.
-- **Wybór osoby** na zatłoczonej sali (dotknij sylwetki) i rozmycie tła maską segmentacji; zamiana lewa/prawa strona, lustro.
+- **Wybór osoby** na zatłoczonej sali (dotknij sylwetki); zamiana lewa/prawa strona, lustro.
+- **🔒 Prywatność (v2.1, domyślnie włączona):** tło jest rozmywane maską segmentacji MediaPipe – ostra zostaje sylwetka, strefy dłoni/stóp oraz sztanga z jej torem. Brak świeżej maski = rozmyty cały kadr (tryb „fail-closed”). Dotyczy podglądu, filmu, zrzutów, nagrań, raportu i PDF; przełącznik 🔒 na podglądzie lub w ustawieniach, zapamiętywany. Zdjęcia w raporcie mają dopisek „tło rozmyte”. Test: `tests/test_privacy.py` (zrzuty `screenshots/privacy-blur-on.png` / `-off.png` z klipu stockowego).
 - **Śledzenie talerza** (dopasowanie wzorca NCC) z przeliczeniem pikseli na centymetry z średnicy talerza (albo ze wzrostu użytkownika).
 - **Licznik powtórzeń** (automat stanów), oceny techniki dla każdego powtórzenia (ok / uwaga / błąd), ocena serii 0–100, prędkość sztangi,
   spadek prędkości w serii, **szacowane 1RM (Epley)**, sugestia następnego ciężaru, tor sztangi.

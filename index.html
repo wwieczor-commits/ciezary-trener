@@ -54,10 +54,12 @@
         <canvas id="view" width="1280" height="720"></canvas>
         <div class="hud">
           <span class="badge" id="bFps" hidden>– fps</span>
+          <span class="badge priv" id="bPriv" hidden>🔒 Tło rozmyte</span>
           <span class="badge rec" id="bRec" hidden>SERIA 0,0 s</span>
           <span class="badge" id="bSet" hidden></span>
         </div>
         <div class="stbtns">
+          <button class="rbtn priv" id="sPriv" aria-pressed="true" aria-label="Prywatność: rozmyj tło" title="Prywatność: rozmyj tło">🔒</button>
           <button class="rbtn" id="sMute" aria-label="Wycisz trenera" title="Głos trenera">🔊</button>
           <button class="rbtn" id="sFlip" hidden aria-label="Przełącz kamerę przód/tył" title="Przełącz kamerę">🔄</button>
           <button class="rbtn" id="sFs" aria-label="Pełny ekran" title="Pełny ekran">⛶</button>
@@ -154,7 +156,7 @@
           <label class="field"><span>Imię w raporcie</span><input type="text" id="pname" placeholder="opcjonalnie" autocomplete="off"></label>
         </div>
         <div class="checks">
-          <label class="switch"><input type="checkbox" id="blur"> Rozmyj tło</label>
+          <label class="switch"><input type="checkbox" id="blur"> 🔒 Prywatność: rozmyj tło</label>
           <label class="switch"><input type="checkbox" id="mirror"> Lustro</label>
           <label class="switch"><input type="checkbox" id="swap"> Zamień lewą i prawą</label>
         </div>
@@ -286,7 +288,7 @@
 
 <footer>
   <span>© Wojciech Wieczorek · Ciężary · Trener techniki</span>
-  <span>Wersja 2.0 · pozycja z obrazu 2D – wartości orientacyjne</span>
+  <span>Wersja 2.1 · prywatność: rozmyte tło · pozycja z obrazu 2D – wartości orientacyjne</span>
 </footer>
 
 <div id="toast" role="status" aria-live="polite"></div>
