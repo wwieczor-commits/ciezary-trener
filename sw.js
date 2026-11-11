@@ -1,10 +1,10 @@
 /* Ciężary · Trener techniki – service worker (© Wojciech Wieczorek): powłoka aplikacji offline + cache bibliotek i modelu */
-const VERSION = 'v3';
+const VERSION = 'v4';   // v2.2
 const SHELL = `ciezary-shell-${VERSION}`;
 const LIBS = 'ciezary-libs-v1';
 const SHELL_FILES = [
   './', './index.html', './style.css', './report.css', './manifest.webmanifest',
-  './js/app.js', './js/util.js', './js/engine.js', './js/coach.js', './js/report.js', './js/store.js',
+  './js/app.js', './js/util.js', './js/engine.js', './js/coach.js', './js/report.js', './js/store.js', './js/biomech.js',
   './assets/fonts.css', './assets/logo-bikerc.svg',
   './assets/vendor/jspdf.umd.min.js', './assets/vendor/report-fonts.js',
   './assets/icons/icon-192.png', './assets/icons/icon-512.png', './assets/icons/icon-maskable-512.png', './assets/icons/apple-touch-icon.png'

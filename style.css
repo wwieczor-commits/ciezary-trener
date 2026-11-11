@@ -223,3 +223,21 @@ footer{max-width:1400px;margin:0 auto;padding:6px 16px 22px;color:var(--dim);fon
 .rbtn.priv[aria-pressed=true]{background:rgba(46,196,182,.88);border-color:transparent}
 .rbtn.priv[aria-pressed=false]{opacity:.75}
 .badge.priv{background:rgba(46,196,182,.9);color:#10201e;border-color:transparent}
+
+/* ---------- v2.2: obciążenia, zmęczenie, pewność (kompaktowo) ---------- */
+.bio{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-top:8px}
+.bz{background:var(--bg-deep);border:1px solid #3a3838;border-left:4px solid var(--line);border-radius:var(--r);padding:5px 8px;font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bz i{display:block;font-style:normal;font-size:9.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.bz small{font-weight:600;color:var(--muted);font-size:11px}
+.bz.ok{border-left-color:#4ade80} .bz.warn{border-left-color:var(--yellow)} .bz.bad{border-left-color:var(--danger)} .bz.info{border-left-color:var(--teal-hi)}
+@media (max-width:420px){.bio{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.badge.load{color:#fff} .badge.load.z-ok{background:rgba(22,163,74,.85)} .badge.load.z-warn{background:rgba(217,119,6,.9)} .badge.load.z-bad{background:rgba(220,38,38,.9)}
+.biosum{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:13.5px;color:var(--muted)}
+.biosum b{color:var(--text);margin-right:4px}
+.z{font-style:normal;font-weight:700;padding:1px 6px;border-radius:5px;font-size:12px}
+.z-ok{background:rgba(74,222,128,.18);color:#86efac} .z-warn{background:rgba(254,218,117,.18);color:var(--yellow)} .z-bad{background:rgba(254,44,85,.2);color:#ff7a93} .z-na{color:var(--dim)}
+.loadeff table{font-size:13px} .loadeff th,.loadeff td{padding:6px;text-align:right;border-bottom:1px solid #3a3838;white-space:nowrap} .loadeff th{font-size:10.5px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em}
+.loadeff th:first-child,.loadeff td:first-child{text-align:left}
+.loadeff .tw{overflow-x:auto} .loadeff .lechart svg{width:100%;height:auto;display:block;margin-top:8px}
+.loadeff h3.leh{font-size:13px;color:var(--text);margin:10px 0 4px} .loadeff h3.leh:first-child{margin-top:0}
+.srclist ol{padding-left:26px;margin:0;font-size:12.5px} .srclist li{margin:4px 0;overflow-wrap:anywhere}

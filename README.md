@@ -9,10 +9,59 @@ Wszystko działa lokalnie w przeglądarce – **obraz nie jest nigdzie wysyłany
 
 © Wojciech Wieczorek · Ciężary · Trener techniki. Logo i kolory: BikeRc.
 
-> ⚠️ Ocena techniki i szacowane wartości (1RM, prędkość) są **orientacyjne** – pomiar z jednej kamery 2D nie zastępuje
+> ⚠️ Ocena techniki i szacowane wartości (1RM, prędkość, obciążenia kręgosłupa i kolan, zmęczenie) są **orientacyjne** – pomiar z jednej kamery 2D nie zastępuje
 > trenera. Dobieraj ciężary rozsądnie, w razie bólu przerwij ćwiczenie.
 
 Nowa wersja aplikacji „BikeRc Siła” (repozytorium `ci-ary-`, które pozostaje bez zmian).
+
+## 🆕 v2.2 – obciążenia kręgosłupa i kolan, zmęczenie i wpływ ciężaru na technikę (wg literatury)
+
+Reguły z przeglądu literatury BikeRc (sekcja F), które da się zrealizować z jednego filmu 2D z boku. Wszystkie wartości są
+**szacunkowe / orientacyjne** – nie zastępują trenera ani badania w laboratorium. Logika: `js/biomech.js` (czyste funkcje, testy jednostkowe).
+
+- **Kręgosłup L4/L5 w każdym powtórzeniu** – moment zginający, ściskanie i ścinanie z prostego modelu statycznego
+  (Cholewicki 1991 [5]: ramię prostowników 6 cm, linia działania 5°) ze znanego ciężaru sztangi, masy ciała (nowe pole; bez niej –
+  szacunek ze wzrostu, BMI 24) i kąta tułowia z obrazu. Strefy ścinania **zielona < 500 N, żółta 500–1000 N, czerwona > 1000 N**
+  (Gallagher i Marras 2012 [6]; przy 100+ powtórzeniach dziennie czerwona od 700 N). Ściskanie jako krotność odniesienia **NIOSH 3400 N** [7]
+  (skala z ergonomii pracy, nie zakaz). Wyciskanie leżąc – nie dotyczy.
+- **Kolano** – kąt zgięcia w każdym powtórzeniu i strefa: do 50° najmniejsze siły, ok. 90° szczyt nacisku rzepki, głęboko – nie błąd
+  przy dobrej technice [1][2]. **Bez reguły „kolana nie za palce”** [4]. Ostrzeżenie **„półprzysiad z dużym ciężarem”** (kolano < 80°
+  przy ciężarze ≥ 80% najlepszego 1RM / ≥ 1,2× masy ciała lub przy zakresie mniejszym niż w lżejszych seriach) [2].
+- **Porównanie z Tobą** – pochylenie tułowia (proxy zaokrąglenia; kamera nie widzi kręgosłupa) porównywane z Twoimi lżejszymi seriami
+  i z pierwszymi powtórzeniami serii; ostrzeżenie, gdy rośnie z ciężarem lub zmęczeniem [9][10].
+- **Zmęczenie** – spadek prędkości gryfu w serii + narastające pochylenie tułowia [11][12]; **progi osobno dla ćwiczeń**
+  (start: przysiad 20%, martwy 20%, OHP 25%, ławka 30%; pochylenie 5°) – konfigurowalne w „Ustawieniach analizy”, oznaczone jako
+  wartości startowe do walidacji.
+- **Chwyt ≤ 1,5× szerokości barków** (wyciskania) [8] – liczony tylko, gdy da się go zmierzyć (barki rozsunięte na obrazie); z boku: „n/d”.
+- **Jakość pomiaru** – ostrzeżenie (napis + głos) przed serią, gdy kamera nie stoi z boku; różnice kątów < 5° są pomijane [17][18];
+  **pewność pomiaru** 0–100% przy każdym powtórzeniu (widoczność punktów, ustawienie z boku, skala z talerza/wzrostu, liczba klatek).
+  Przy niskiej pewności trener nie podpowiada na podstawie kątów i obciążeń.
+- **Wpływ ciężaru na technikę** – historia zapisuje ciężar i wskaźniki serii; tabela + wykres (ciężar → ocena, pochylenie tułowia,
+  kolano, prędkość, ścinanie L4/L5) w zakładce Historia, w raporcie HTML i w PDF.
+- **Gdzie to widać**: kompaktowe wskaźniki na żywo (Kręgosłup / Kolano lub Chwyt / Zmęczenie / Pewność) i plakietka „L4/L5 ~N” na obrazie
+  podczas serii, wartości dla każdego powtórzenia, podsumowanie serii, raport HTML/PDF (nowe sekcje + „Źródła”), CSV (nowe kolumny).
+- **Głos** – nadal jedna, najważniejsza uwaga na powtórzenie; kolejność: kręgosłup → zmęczenie → technika → bark → kolano [15]
+  (np. „Gryf bliżej ciała, odciąż plecy”, „Zmęczenie, plecy się pochylają, kończ serię”). Ostrzeżenia wstrzymują propozycję
+  zwiększenia ciężaru.
+- Pomoc: nowa karta z opisem reguł i listą **źródeł**. Service worker v4.
+
+| Na żywo (klip stockowy) | Podsumowanie | Raport – obciążenia | Wpływ ciężaru |
+|---|---|---|---|
+| ![](screenshots/v22-live.png) | ![](screenshots/v22-podsumowanie.png) | ![](screenshots/v22-raport.png) | ![](screenshots/v22-historia-wplyw-ciezaru.png) |
+
+**Czego (jeszcze) nie ma i dlaczego** – zgięcie lędźwiowe jako % indywidualnego maksimum (kamera 2D nie widzi krzywizny kręgosłupa;
+zastępuje je pochylenie tułowia), korekta perspektywy jak u Iizuki (wymaga kalibracji kamery – zamiast niej wymuszamy ustawienie z boku
+i podajemy pewność), odwiedzenie ramienia w wyciskaniu (płaszczyzna czołowa – niewidoczne z boku), wysiłek mięśni jako % maks. momentu
+(brak danych o maks. momencie danej osoby), oczekiwania wg % 1RM dla martwego ciągu (1RM jest tylko szacowane – stąd porównanie
+z lżejszymi seriami), siły dynamiczne (model jest statyczny – wartości raczej zaniżone przy szybkich powtórzeniach).
+
+### Źródła (v2.2)
+[1] Escamilla 2001, Med Sci Sports Exerc 33:127 · [2] Hartmann i wsp. 2013, Sports Med 43:993 · [4] Fry i wsp. 2003, JSCR 17:629 ·
+[5] Cholewicki, McGill, Norman 1991, Med Sci Sports Exerc 23:1179 · [6] Gallagher, Marras 2012, Clin Biomech 27:973 ·
+[7] Waters i wsp. 1993 (NIOSH), Ergonomics 36:749 · [8] Green, Comfort 2007, Strength Cond J 29:10 · [9] Shoji i wsp. 2025, Front Sports Act Living 7:1682991 ·
+[10] Dolan, Adams 1998, J Biomech 31:713 · [11] Hooper i wsp. 2014, JSCR 28:1127 · [12] Sánchez-Medina, González-Badillo 2011, Med Sci Sports Exerc 43:1725 ·
+[15] Aasa i wsp. 2017, Br J Sports Med 51:211 · [17] Gilon i wsp. 2026, arXiv:2603.24733 · [18] Iizuka i wsp. 2026, Front Sports Act Living 8:1831625 ·
+[19] Zhang i wsp. 2027, Appl Ergon 138:104866. Pełne opisy z DOI: zakładka Pomoc → Źródła, raport i `js/biomech.js` (`SOURCES`).
 
 | Trener (głos) | Odpoczynek | Podsumowanie | Raport |
 |---|---|---|---|
@@ -75,10 +124,14 @@ Kamera wymaga HTTPS albo `localhost`.
 
 ## Struktura
 `index.html`, `style.css`, `report.css`, `sw.js`, `manifest.webmanifest`, `js/` (`app.js` – interfejs i przepływ serii, `engine.js` – szkielet,
-filtry, automat powtórzeń i ocena techniki, `coach.js` – głos i scenariusz trenera, `report.js` – raport HTML/PDF, `store.js` – dane i migracja, `util.js`),
+filtry, automat powtórzeń i ocena techniki, `biomech.js` – obciążenia L4/L5 i kolan, zmęczenie, wpływ ciężaru, pewność pomiaru, źródła, `coach.js` – głos i scenariusz trenera, `report.js` – raport HTML/PDF, `store.js` – dane i migracja, `util.js`),
 `assets/` (czcionki, logo, ikony, jsPDF, MediaPipe + modele).
 
 ## Testy
+`node --test tests/test_biomech.mjs` – testy jednostkowe v2.2 (model L4/L5 ze znanymi danymi wejściowymi i ręcznym rachunkiem, strefy,
+zmęczenie, porównanie z lżejszymi seriami, półprzysiad, wpływ ciężaru, pewność pomiaru).
+`python3 tests/test_v22.py` – Playwright (Pixel 7): nowe wskaźniki na żywo, podsumowanie, raport HTML/PDF/CSV, historia, pomoc, głos, ławka,
+oraz analiza klipu stockowego `testmedia/squat.mp4` (lokalnie, poza repozytorium); zrzuty `screenshots/v22-*.png`.
 `python3 tests/test_app.py` (Playwright + Chrome; Pixel 7, iPhone 13, komputer): brak błędów JS, brak przewijania poziomego, wszystkie zakładki,
 seria z syntetycznym szkieletem (powtórzenia, auto‑koniec, podsumowanie, historia, raport, PDF, CSV, JSON), przepływ odliczanie → seria → przerwa → seria 2,
 **wypowiedzi trenera** (atrapa `speechSynthesis` zapisuje teksty), zapis ustawień głosu, tryb bez głosów, migracja ze starej wersji

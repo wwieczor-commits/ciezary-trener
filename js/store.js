@@ -3,6 +3,7 @@
    są kopiowane z kluczy bikerc_sila_*_v1 (stare klucze zostają nietknięte). */
 import { VOICE_DEFAULTS } from './coach.js';
 import { EX } from './engine.js';
+import { FATIGUE_DEFAULTS } from './biomech.js';
 
 export const KEYS = { hist: 'ciezary_trener_history_v2', set: 'ciezary_trener_settings_v2', oldHist: 'bikerc_sila_history_v1', oldSet: 'bikerc_sila_settings_v1', migrated: 'ciezary_trener_migrated_v2' };
 export const MAX_HIST = 300;
@@ -11,7 +12,8 @@ const write = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); retu
 
 export const DEFAULTS = {
   model: 'lite', dev: 'GPU', smooth: '1', height: '178', plateD: '45', blur: true, mirror: null, swap: false,
-  ex: 'squat', weights: {}, vrate: '1', name: '', plan: '', coach: { ...VOICE_DEFAULTS }
+  ex: 'squat', weights: {}, vrate: '1', name: '', plan: '', coach: { ...VOICE_DEFAULTS },
+  mass: '', thr: { vloss: { ...FATIGUE_DEFAULTS.vloss }, lean: FATIGUE_DEFAULTS.lean }
 };
 
 const validHist = e => e && typeof e === 'object' && e.ex && EX[e.ex] && e.summary && Array.isArray(e.reps) && typeof e.date === 'string';
@@ -46,7 +48,8 @@ export function migrate() {
 
 export function loadSettings() {
   const s = read(KEYS.set, {});
-  const m = { ...DEFAULTS, ...s, weights: { ...(s.weights || {}) }, coach: { ...VOICE_DEFAULTS, ...(s.coach || {}) } };
+  const m = { ...DEFAULTS, ...s, weights: { ...(s.weights || {}) }, coach: { ...VOICE_DEFAULTS, ...(s.coach || {}) },
+    thr: { lean: s.thr?.lean ?? FATIGUE_DEFAULTS.lean, vloss: { ...FATIGUE_DEFAULTS.vloss, ...(s.thr?.vloss || {}) } } };
   if (!EX[m.ex]) m.ex = 'squat';
   return m;
 }

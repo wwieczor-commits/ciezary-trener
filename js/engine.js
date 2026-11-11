@@ -2,6 +2,7 @@
    Port i rozwinięcie silnika „BikeRc Siła”: filtr One Euro, wybór cech sylwetki, automat licznika powtórzeń,
    skala px→cm, ocena techniki i podsumowanie serii. Czysta logika – bez DOM, więc łatwa do testowania. */
 import { r1, f0, median, pct, lvl, worst, sub, dist, angBetween, deg } from './util.js';
+import { repBio, annotateSet, ANGLE_NOISE } from './biomech.js';
 
 export const IDX = {
   L: { sh: 11, el: 13, wr: 15, idx: 19, hip: 23, knee: 25, ank: 27, heel: 29, toe: 31 },
@@ -125,16 +126,18 @@ export class FeatureExtractor {
     const inside = p => p.x > w * .01 && p.x < w * .99 && p.y > h * .005 && p.y < h * .995;
     const miss = need.filter(k => { const p = pick(k); return p.v < .5 || !inside(p); });
     const shoulderGap = Math.abs(P[11].x - P[12].x) / Math.max(1, trunk);
+    // szerokość chwytu / barków – mierzalna tylko, gdy kamera nie stoi dokładnie z boku (barki rozsunięte na obrazie)
+    const grip = shoulderGap >= .3 && P[15].v > .5 && P[16].v > .5 && P[11].v > .5 && P[12].v > .5 ? Math.abs(P[15].x - P[16].x) / Math.max(1, Math.abs(P[11].x - P[12].x)) : null;
     let msg = '', code = '';
     if (miss.some(k => ['ank', 'heel', 'toe'].includes(k))) { msg = 'Nie widać stóp – odsuń telefon albo obniż go'; code = 'feet'; }
     else if (miss.includes('wr') || miss.includes('el')) { msg = ex === 'press' ? 'Nie widać dłoni nad głową – odsuń telefon' : 'Nie widać rąk – popraw kadr'; code = 'hands'; }
     else if (miss.length) { msg = 'Cała sylwetka musi być w kadrze'; code = 'frame'; }
-    else if (ex !== 'bench' && shoulderGap > .45) { msg = 'Ustaw telefon dokładnie z boku'; code = 'side'; }
+    else if (ex !== 'bench' && shoulderGap > .45) { msg = 'Ustaw telefon dokładnie z boku – inaczej kąty są zaniżone'; code = 'side'; }
     const setup = { ok: !msg, msg: msg || 'Ustawienie OK – widać całą sylwetkę', code };
 
     const q = Math.min(...need.map(k => pick(k).v));
     return { t, w, h, P, I, near: nearSide, f, bar, barRaw, barSrc, handPt, mfx, sh, el, wr, hip, knee, ank, heel, toe,
-      kneeFlex, hipAng, torso, elbow, forearm, leg, trunk, q, shoulderGap, setup };
+      kneeFlex, hipAng, torso, elbow, forearm, leg, trunk, q, shoulderGap, grip, setup };
   }
 }
 
@@ -185,7 +188,7 @@ export function scaleOf(S, exk, height, platePpc) {
 /* =========================================================
    ANALIZA POWTÓRZENIA
    ========================================================= */
-export function analyzeRep(S, seg, exk, ppc, n) {
+export function analyzeRep(S, seg, exk, ppc, n, ctx = {}) {
   const { s, turn, e } = seg;
   const R = S.slice(s, e + 1);
   const f = (median(R.map(r => r.f)) ?? 1) >= 0 ? 1 : -1;
@@ -300,8 +303,10 @@ export function analyzeRep(S, seg, exk, ppc, n) {
   const score = valid.length ? Math.round(valid.reduce((a, c) => a + ST_SCORE[c.status], 0) / valid.length) : null;
   const issues = valid.filter(c => c.status !== 'ok').sort((a, b) => (a.status === 'bad' ? 0 : 1) - (b.status === 'bad' ? 0 : 1) || a.pri - b.pri);
   const live = exk === 'bench' ? null : X(S[turn]);
+  // v2.2: obciążenia kręgosłupa i kolan, pochylenie tułowia, jakość pomiaru (szacunkowo – biomech.js)
+  const bio = repBio(S, seg, exk, ppc, ctx);
   return { n, s, turn, e, tTurn: S[turn].t, tStart: S[s].t, tEnd: S[e].t, status, score, rom, vel, concT, tDown: r1(tDown), tUp: r1(tUp),
-    path, checks, main: issues[0] || null, metrics, devTurn: live };
+    path, checks, main: issues[0] || null, metrics, devTurn: live, bio, safety: null };
 }
 
 /* ---------- cała seria ---------- */
@@ -351,15 +356,41 @@ export function summarize(reps, exk, weight) {
 }
 
 /** budowa serii z zebranych próbek (używane po zakończeniu nagrywania) */
-export function buildSetData({ samples, ex, weight, plan, height, platePpc, snaps, src, fileName, setNo, sets }) {
+export function buildSetData({ samples, ex, weight, plan, height, platePpc, snaps, src, fileName, setNo, sets, mass, thr, history }) {
   if (!samples || samples.length < 10) return null;
   const ppc = scaleOf(samples, ex, height, platePpc);
   if (!ppc) return null;
   const segs = segmentAll(samples, ex, ppc);
-  const reps = segs.map((g, i) => analyzeRep(samples, g, ex, ppc, i + 1));
+  const ctx = bioCtx({ ex, weight, height, mass, thr, history, plate: !!platePpc });
+  const reps = segs.map((g, i) => analyzeRep(samples, g, ex, ppc, i + 1, ctx));
+  const bio = annotateSet(reps, ctx);
   reps.forEach(r => { let b = null; for (const sn of snaps || []) if (!b || Math.abs(sn.t - r.tTurn) < Math.abs(b.t - r.tTurn)) b = sn; r.snap = b && Math.abs(b.t - r.tTurn) < 1.5 ? b.url : null; r.snapPriv = !!(r.snap && b.priv); });
   const barSrc = samples.filter(s => s.bs === 'p').length > samples.length / 2 ? 'p' : ex === 'squat' ? 's' : 'h';
   return { id: Date.now(), date: new Date().toISOString(), ex, weight: weight ? +weight : null, plan: plan || null, setNo: setNo || null, sets: sets || null,
     src, fileName, barSrc, ppc, plateScale: !!platePpc, height: +height, duration: samples[samples.length - 1].t - samples[0].t,
-    reps, summary: summarize(reps, ex, weight), samples };
+    reps, summary: applyBio(summarize(reps, ex, weight), bio, weight, ex), samples };
 }
+
+/** kontekst do obliczeń biomechanicznych: ciężar, masa ciała, progi, historia (lżejsze serie, 1RM, liczba powtórzeń dziś) */
+export function bioCtx({ ex, weight, height, mass, thr, history, plate }) {
+  const H = (history || []).filter(h => h.ex === ex);
+  const best1rm = Math.max(0, ...H.map(h => h.summary?.est1rm || 0)) || null;
+  const today = new Date().toISOString().slice(0, 10);
+  const repsToday = (history || []).filter(h => (h.date || '').slice(0, 10) === today).reduce((a, h) => a + (h.summary?.n || 0), 0);
+  return { ex, weight: +weight || null, height, mass, thr, history: H, best1rm, highRep: repsToday >= 100, plate };
+}
+/** dopisuje do podsumowania serii wyniki biomechaniczne; ostrzeżenia mogą wstrzymać zwiększanie ciężaru */
+export function applyBio(sum, bio, weight, ex) {
+  sum.bio = bio;
+  if (!sum.n || !bio) return sum;
+  const block = bio.flags.filter(f => f.key !== 'conf' && (f.status === 'bad' || f.key === 'half'));
+  if (block.length && sum.verdict === 'up') {
+    const w = +weight || null;
+    sum.verdict = 'stay'; sum.nextWeight = w;
+    sum.advice = `Technika w porządku, ale ${block[0].key === 'fatigue' ? 'widać wyraźne zmęczenie' : block[0].key === 'half' ? 'zakres ruchu jest za mały przy tym ciężarze' : block[0].key === 'shear' ? 'szacowane obciążenie kręgosłupa jest wysokie' : 'technika zmienia się pod ciężarem'} – zostań przy ${w ? String(w).replace('.', ',') + ' kg' : 'tym ciężarze'}.`;
+  }
+  const have = new Set(sum.tips);
+  for (const f of bio.flags) if (!have.has(f.tip)) sum.tips.push(f.tip);
+  return sum;
+}
+export { ANGLE_NOISE };

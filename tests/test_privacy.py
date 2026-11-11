@@ -74,7 +74,7 @@ def run(p):
     page.evaluate("document.querySelector('#blur').click()")
     page.reload(); page.wait_for_function('window.__ct'); page.wait_for_timeout(500)
     check('ustawienie „włączone” przetrwało odświeżenie', page.is_checked('#blur') and page.evaluate('__ct.S.blur') is True)
-    check('wersja w stopce', 'Wersja 2.1' in page.inner_text('footer'))
+    check('wersja w stopce', 'Wersja 2.2' in page.inner_text('footer'))
 
     if ENGINE == 'chromium':
         page.wait_for_function("document.querySelector('#statusTxt').textContent.startsWith('Pose')", timeout=90000)

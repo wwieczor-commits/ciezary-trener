@@ -57,6 +57,7 @@
           <span class="badge priv" id="bPriv" hidden>🔒 Tło rozmyte</span>
           <span class="badge rec" id="bRec" hidden>SERIA 0,0 s</span>
           <span class="badge" id="bSet" hidden></span>
+          <span class="badge load" id="bLoad" hidden></span>
         </div>
         <div class="stbtns">
           <button class="rbtn priv" id="sPriv" aria-pressed="true" aria-label="Prywatność: rozmyj tło" title="Prywatność: rozmyj tło">🔒</button>
@@ -135,6 +136,9 @@
           <div class="kpi"><span id="lblDev">Gryf od środka stopy</span><b id="vDev">—</b></div>
           <div class="kpi"><span id="lblMet">Biodro vs kolano</span><b id="vMet">—</b></div>
         </div>
+        <div class="bio" id="liveBio" aria-label="Obciążenia i zmęczenie – ostatnie powtórzenie (szacunkowo)">
+          <span class="bz" id="bzSpine"><i>Kręgosłup</i>—</span><span class="bz" id="bzKnee"><i>Kolano</i>—</span><span class="bz" id="bzFat"><i>Zmęczenie</i>—</span><span class="bz" id="bzConf"><i>Pewność</i>—</span>
+        </div>
         <div class="chips" id="chips"></div>
         <div id="livePath" class="livepath"></div>
       </div>
@@ -154,7 +158,11 @@
           <label class="field"><span>Przetwarzanie</span><select id="devSel"><option value="GPU">GPU</option><option value="CPU">CPU</option></select></label>
           <label class="field"><span>Wygładzanie</span><select id="smooth"><option value="2.5">słabe</option><option value="1">średnie</option><option value="0.4">mocne</option></select></label>
           <label class="field"><span>Imię w raporcie</span><input type="text" id="pname" placeholder="opcjonalnie" autocomplete="off"></label>
+          <label class="field"><span>Masa ciała (kg)</span><input type="text" id="mass" inputmode="decimal" placeholder="szacuję ze wzrostu" autocomplete="off"></label>
+          <label class="field"><span>Przyrost pochylenia (°)</span><input type="text" id="thrL" inputmode="decimal" autocomplete="off"></label>
+          <label class="field" style="grid-column:1/-1"><span id="lblThrV">Próg zmęczenia – spadek prędkości (%)</span><input type="text" id="thrV" inputmode="decimal" autocomplete="off"></label>
         </div>
+        <p class="note">Masa ciała i ciężar służą do <b>szacowania</b> obciążenia kręgosłupa (L4/L5). Progi zmęczenia to <b>wartości startowe do walidacji</b> (spadek prędkości w serii + narastające pochylenie tułowia); różnice kątów poniżej 5° są pomijane. <button type="button" class="btn small" id="thrReset">Przywróć progi startowe</button></p>
         <div class="checks">
           <label class="switch"><input type="checkbox" id="blur"> 🔒 Prywatność: rozmyj tło</label>
           <label class="switch"><input type="checkbox" id="mirror"> Lustro</label>
@@ -226,6 +234,7 @@
   <div class="grid two">
     <div class="col">
       <div class="card"><h2>Postępy</h2><div class="tablewrap"><table id="prTbl"></table></div></div>
+      <div class="card"><h2>Wpływ ciężaru na technikę</h2><div id="loadEff" class="loadeff"></div><p class="note">Serie pogrupowane wg ciężaru: ocena techniki, pochylenie tułowia, zgięcie kolana, prędkość i szacowane ścinanie L4/L5 (orientacyjnie).</p></div>
       <div class="card" id="oldBar" hidden>
         <h2>Poprzednia wersja</h2>
         <p class="note" style="margin-top:0" id="oldTxt"></p>
@@ -276,6 +285,23 @@
         <p>Wczytaj film z galerii, przewiń do początku serii, ewentualnie zaznacz talerz i dotknij <b>Analizuj film</b>. Możesz zwolnić odtwarzanie (0,25×), cofać i przesuwać klatka po klatce. Trener nie mówi podczas analizy filmu – dostajesz raport po jej zakończeniu.</p>
         <p class="note">iPhone nagrywa domyślnie w HEVC; jeśli przeglądarka nie odtwarza filmu, zmień format aparatu na „Najbardziej zgodny” albo użyj Safari/Chrome na iPhonie.</p>
       </div>
+      <div class="card helptxt" id="helpBio">
+        <h2>Obciążenia i zmęczenie (v2.2)</h2>
+        <ul>
+          <li><b>Kręgosłup L4/L5</b> – z wpisanego ciężaru, masy ciała i kąta tułowia liczymy moment zginający, ściskanie i ścinanie prostym modelem statycznym [5] (ramię prostowników 6 cm, linia działania 5°). Strefy ścinania: <b>zielona &lt; 500 N, żółta 500–1000 N, czerwona &gt; 1000 N</b> [6] (przy 100+ powtórzeniach dziennie czerwona od 700 N). Ściskanie porównujemy z odniesieniem NIOSH 3400 N [7] – to skala z ergonomii pracy, nie zakaz (u trójboistów do ok. 17 kN [5]).</li>
+          <li><b>Kolano</b> – kąt zgięcia w każdym powtórzeniu: najmniejsze siły do ok. 50°, największy nacisk rzepki ok. 90°; głęboki przysiad z dobrą techniką nie jest błędem [1][2]. Nie stosujemy reguły „kolana nie za palce” – blokowanie kolan przenosi ogromne obciążenie na biodra i plecy [4]. Ostrzegamy za to przed <b>półprzysiadem z dużym ciężarem</b> [2].</li>
+          <li><b>Porównanie z Tobą</b> – pochylenie tułowia porównujemy z Twoimi lżejszymi seriami i pierwszymi powtórzeniami serii; wzrost pod ciężarem lub ze zmęczeniem to sygnał ostrzegawczy [9][10]. Kamera nie widzi krzywizny kręgosłupa – pochylenie tułowia jest jej przybliżeniem.</li>
+          <li><b>Zmęczenie</b> – spadek prędkości gryfu w serii razem z narastającym pochyleniem tułowia [11][12]; progi dla każdego ćwiczenia ustawisz w „Ustawieniach analizy” (wartości startowe do walidacji).</li>
+          <li><b>Chwyt (wyciskanie)</b> – zalecane najwyżej 1,5× szerokości barków [8]. Z boku szerokości chwytu nie da się zmierzyć – wtedy oceń ją sam.</li>
+          <li><b>Jakość pomiaru</b> – telefon dokładnie z boku (inaczej kąty są zaniżone o ok. 10°), różnice kątów &lt; 5° pomijamy, przy każdym powtórzeniu podajemy pewność pomiaru [17][18][19]. Przy niskiej pewności trener nie podpowiada na podstawie kątów i obciążeń.</li>
+          <li>Głos podaje <b>jedną najważniejszą uwagę</b>: najpierw kręgosłup i zmęczenie, potem bark, potem kolano [15].</li>
+        </ul>
+        <p class="note">Wszystkie wartości są szacunkowe / orientacyjne i nie zastępują trenera ani badania w laboratorium.</p>
+      </div>
+      <div class="card helptxt">
+        <h2>Źródła</h2>
+        <div id="helpSrc" class="srclist"></div>
+      </div>
       <div class="card helptxt">
         <h2>Ważne</h2>
         <p>Pomiar bez markerów z obrazu 2D z jednej kamery (MediaPipe Pose) – wartości są orientacyjne. Kryteria techniki to uproszczone zasady metody „Zacznij od siły” (M. Rippetoe), do uzgodnienia z trenerem. Aplikacja nie zastępuje trenera ani asekuracji i nie gwarantuje ochrony przed kontuzją.</p>
@@ -288,7 +314,7 @@
 
 <footer>
   <span>© Wojciech Wieczorek · Ciężary · Trener techniki</span>
-  <span>Wersja 2.1 · prywatność: rozmyte tło · pozycja z obrazu 2D – wartości orientacyjne</span>
+  <span>Wersja 2.2 · obciążenia i zmęczenie szacunkowo · prywatność: rozmyte tło · pozycja z obrazu 2D – wartości orientacyjne</span>
 </footer>
 
 <div id="toast" role="status" aria-live="polite"></div>

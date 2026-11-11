@@ -193,11 +193,13 @@ export class Trainer {
     if (plan && n === plan && L >= 2) parts.push('To ostatnie!');
     else if (plan && left === 1 && L >= 2) parts.push('Jeszcze jedno');
     else if (plan && plan >= 6 && n === Math.ceil(plan / 2) && L >= 2) parts.push('Połowa');
-    const corr = rep.main?.cue;
+    // jedna, najważniejsza uwaga: pilna uwaga bezpieczeństwa (kręgosłup, zmęczenie – v2.2) przed techniką
+    const sf = rep.safety;
+    const corr = sf && sf.status === 'bad' ? sf.cue : (rep.main?.cue || sf?.cue);
     let tempo = null;
     if (L >= 2) {
       if ((c.ex === 'squat' || c.ex === 'bench') && rep.tDown != null && rep.tDown < 0.7) tempo = 'Wolniej w dół, kontroluj opuszczanie';
-      else if (vBest && rep.vel && n >= 3 && rep.vel < vBest * 0.7) tempo = 'Prędkość spada';
+      else if (vBest && rep.vel && n >= 3 && rep.vel < vBest * 0.7 && sf?.key !== 'fatigue') tempo = 'Prędkość spada';
     }
     if (corr && L >= 2) { parts.push(corr); if (tempo && L >= 3) parts.push(tempo); this.goodStreak = 0; }
     else if (tempo) { parts.push(tempo); this.goodStreak = 0; }
@@ -222,6 +224,8 @@ export class Trainer {
     if (L >= 2) {
       t += ` Ocena techniki: ${plInt(S.score)} na sto.`;
       t += S.mainIssue ? ` Najważniejsze do poprawy: ${lc(S.mainIssue.cue)}.` : ' Technika bardzo dobra.';
+      const fl = (S.bio?.flags || []).find(f => f.key !== 'conf');
+      if (fl) t += ' ' + ({ fatigue: 'Widać zmęczenie.', heavier: 'Przy tym ciężarze pochylasz się bardziej niż przy lżejszych seriach.', half: 'Za mały zakres ruchu przy tym ciężarze.', shear: 'Szacowane obciążenie kręgosłupa jest wysokie.' }[fl.key] || '');
       if (S.nextWeight && set.weight) {
         if (S.verdict === 'up') t += ` Następnym razem ${plKg(S.nextWeight)}.`;
         else if (S.verdict === 'down') t += ` Zmniejsz ciężar do ${plKg(S.nextWeight)}.`;

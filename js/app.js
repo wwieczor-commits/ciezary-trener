@@ -1,9 +1,10 @@
 /* Ciężary · Trener techniki – aplikacja (© Wojciech Wieczorek)
    Kamera / film → MediaPipe Pose → silnik analizy → głosowy trener, raport PDF, historia. Wszystko lokalnie w przeglądarce. */
 import { $, $$, esc, f0, f1, f2, kg, rrect, fmtDate, mmss, clamp } from './util.js';
-import { IDX, BONES, EX, LEG_RATIO, TORSO_RATIO, makeFilters, pickPerson, FeatureExtractor, RepFSM, scaleOf, analyzeRep, buildSetData } from './engine.js';
+import { IDX, BONES, EX, LEG_RATIO, TORSO_RATIO, makeFilters, pickPerson, FeatureExtractor, RepFSM, scaleOf, analyzeRep, buildSetData, bioCtx } from './engine.js';
+import { annotateSet, lumbarAt, bodyMass, shearZone, kneeZone, ZONE_LABEL, FAT_LABEL, FATIGUE_DEFAULTS, loadEffect } from './biomech.js';
 import { Voice, Trainer, VOICE_DEFAULTS } from './coach.js';
-import { barPathSVG, velSVG, reportHTML, makePdf, loadPdfLib } from './report.js';
+import { barPathSVG, velSVG, reportHTML, makePdf, loadPdfLib, loadEffectHTML, sourcesHTML } from './report.js';
 import * as store from './store.js';
 
 const TEST = new URLSearchParams(location.search).has('test');
@@ -43,7 +44,7 @@ const fx = new FeatureExtractor();
 let detEma = 0, lastRateAdj = 0;
 let recording = false, cdEnd = 0, cdTotal = 0, cdLast = 0, recStart = 0, recBegan = 0;
 let samples = [], fsm = new RepFSM(), liveReps = [], snaps = [], snapBest = -1, snapPending = false, snapCanvas = null;
-let planDoneAt = 0, planDoneNote = 0;
+let planDoneAt = 0, planDoneNote = 0, liveCtx = null;
 let lastSet = null, cueText = '', cueClass = '', cueUntil = 0;
 let wakeLock = null;
 let sess = { setNo: 1, done: [], finished: false, introDone: false };
@@ -433,7 +434,7 @@ const curPpc = () => scaleOf(samples, ex, S.height, plate.ppc);
 function record(F) {
   const s = { t: src === 'cam' ? F.t - recStart : F.t, bx: F.bar.x, by: F.bar.y, ry: F.barRaw.y, bs: F.barSrc, bq: F.bar.v, mfx: F.mfx, f: F.f,
     shx: F.sh.x, shy: F.sh.y, hipx: F.hip.x, hipy: F.hip.y, kx: F.knee.x, ky: F.knee.y, ay: F.ank.y,
-    kneeFlex: F.kneeFlex, hipAng: F.hipAng, torso: F.torso, elbow: F.elbow, forearm: F.forearm, leg: F.leg, trunk: F.trunk, q: F.q };
+    kneeFlex: F.kneeFlex, hipAng: F.hipAng, torso: F.torso, elbow: F.elbow, forearm: F.forearm, leg: F.leg, trunk: F.trunk, q: F.q, sg: F.shoulderGap, grip: F.grip };
   samples.push(s);
   const i = samples.length - 1;
   const ppc = curPpc();
@@ -539,8 +540,9 @@ function initPlateAndTap() {
 /* =========================================================
    SERIA, SESJA, PRZERWA
    ========================================================= */
+const makeCtx = () => bioCtx({ ex, weight: weightN(), height: S.height, mass: S.mass, thr: S.thr, history: store.loadHist(), plate: !!plate.ppc });
 function resetSet() {
-  samples = []; liveReps = []; snaps = []; snapBest = -1; snapPending = false; fsm = new RepFSM();
+  samples = []; liveReps = []; snaps = []; snapBest = -1; snapPending = false; fsm = new RepFSM(); liveCtx = makeCtx();
   planDoneAt = 0; planDoneNote = 0; cueText = ''; cueUntil = 0; trainer.reset();
   $('#cardSum').hidden = true; renderLive();
 }
@@ -552,6 +554,8 @@ function startSet() {
   if (src === 'cam' && sess.finished) freshSession();
   if (rest) stopRest(true);
   resetSet(); recording = true; lastSet = null;
+  // jakość pomiaru: kamera musi stać z boku – inaczej kąty są zaniżone o ok. 10° (Iizuka 2026)
+  if (setup.code === 'side' && src === 'cam') { toast('Ustaw telefon dokładnie z boku – inaczej kąty i obciążenia będą zaniżone.', 5000, true); voice.say('Ustaw telefon dokładnie z boku.', { prio: 1, key: 'sidewarn', minGap: 15000, ttl: 4000 }); }
   if (src === 'file') {
     cdEnd = 0; recStart = 0; recBegan = performance.now(); trainer.goSilent();
     if (video.ended || video.currentTime > (video.duration || 0) - .3) video.currentTime = 0;
@@ -570,18 +574,24 @@ function beginRec() {
 }
 function onLiveRep(seg, ppc) {
   const vBest = Math.max(0, ...liveReps.map(r => r.vel || 0)) || null;
-  const rep = analyzeRep(samples, seg, ex, ppc, liveReps.length + 1);
+  if (!liveCtx) liveCtx = makeCtx();
+  liveCtx.plate = !!plate.ppc;
+  const rep = analyzeRep(samples, seg, ex, ppc, liveReps.length + 1, liveCtx);
   liveReps.push(rep);
+  annotateSet(liveReps, liveCtx);
   if (snapCanvas?.width) try { snaps.push({ t: rep.tTurn, url: snapCanvas.toDataURL('image/jpeg', .72), priv: !!S.blur }); } catch (e) {}
   snapBest = -1;
   const n = liveReps.length;
-  cueText = rep.main ? rep.main.tip : `Powtórzenie ${n}: dobrze`; cueClass = rep.main ? rep.main.status : 'ok'; cueUntil = performance.now() + 6000;
+  const top = topIssue(rep);
+  cueText = top ? top.tip : `Powtórzenie ${n}: dobrze`; cueClass = top ? top.status : 'ok'; cueUntil = performance.now() + 6000;
   if (src === 'cam') {
     trainer.rep(rep, n, planN(), vBest);
     if (planN() && n === planN()) { if (S.coach.autoEnd) planDoneAt = performance.now() + 1600; else planDoneNote = performance.now() + 1600; }
   }
   renderLive();
 }
+/** jedna najważniejsza uwaga: pilna uwaga bezpieczeństwa (kręgosłup, zmęczenie) wygrywa z techniką */
+const topIssue = r => r ? ((r.safety?.status === 'bad' ? r.safety : null) || r.main || r.safety || null) : null;
 function finishSet(o = {}) {
   if (!recording) return;
   const wasCd = !!cdEnd;
@@ -592,7 +602,7 @@ function finishSet(o = {}) {
   if (wasCd) { voice.cancel(); toast('Odliczanie anulowane'); return; }
   if (o.silent) return;
   const camera = src === 'cam';
-  const set = buildSetData({ samples, ex, weight: weightN(), plan: planN(), height: S.height, platePpc: plate.ppc, snaps, src, fileName, setNo: camera ? sess.setNo : null, sets: camera ? setsN() : null });
+  const set = buildSetData({ samples, ex, weight: weightN(), plan: planN(), height: S.height, platePpc: plate.ppc, snaps, src, fileName, setNo: camera ? sess.setNo : null, sets: camera ? setsN() : null, mass: S.mass, thr: S.thr, history: store.loadHist() });
   if (!set) {
     toast('Za mało danych – nie wykryto ruchu sztangi.', 4500, true);
     voice.say('Za mało danych. Sprawdź ustawienie telefonu i spróbuj jeszcze raz.', { prio: 2 });
@@ -779,6 +789,23 @@ function updateUI() {
     $('#vMet').innerHTML = m;
   }
   if (!recording && !lastSet && performance.now() > cueUntil) setCue(src ? (setup.msg || '') : '', setup.ok ? 'ok' : 'warn');
+  // szacowane ścinanie L4/L5 „teraz” (HUD) – tylko podczas serii, ze znanym ciężarem
+  const bl = $('#bLoad');
+  if (recording && !cdEnd && cur && ppc && ex !== 'bench' && weightN()) {
+    const L = lumbarAt({ bx: cur.bar.x, shx: cur.sh.x, shy: cur.sh.y, hipx: cur.hip.x, hipy: cur.hip.y, f: cur.f, torso: cur.torso }, ppc, weightN(), bodyMass(S.mass, S.height).kg);
+    if (L) { bl.hidden = false; bl.className = 'badge load z-' + shearZone(L.shear, liveCtx?.highRep); bl.textContent = `L4/L5 ~${Math.round(L.shear / 10) * 10} N`; bl.title = 'Szacowane ścinanie L4/L5 (orientacyjnie)'; }
+    else bl.hidden = true;
+  } else bl.hidden = true;
+}
+/* kompaktowe wskaźniki v2.2 (ostatnie powtórzenie): kręgosłup, kolano, zmęczenie, pewność pomiaru */
+function bioPills(b, exk) {
+  const P = (id, st, lab, val) => { const el = $(id); el.className = 'bz ' + (st || ''); el.innerHTML = `<i>${lab}</i>${val}`; };
+  if (!b) { P('#bzSpine', '', 'Kręgosłup', '—'); P('#bzKnee', '', exk === 'bench' || exk === 'press' ? 'Chwyt' : 'Kolano', '—'); P('#bzFat', '', 'Zmęczenie', '—'); P('#bzConf', '', 'Pewność', '—'); return; }
+  P('#bzSpine', b.load ? b.load.shearSt : '', 'Kręgosłup', b.load ? `${b.load.shear} N <small>ścin.</small>` : (exk === 'bench' ? 'n/d' : weightN() ? '—' : 'podaj kg'));
+  if (exk === 'bench' || exk === 'press') P('#bzKnee', b.gripSt === 'na' ? '' : b.gripSt, 'Chwyt', b.grip != null ? `${f1(b.grip)}× <small>barki</small>` : '<small>z boku n/d</small>');
+  else { const z = kneeZone(b.knee); P('#bzKnee', z?.key === 'peak' ? 'info' : '', 'Kolano', b.knee != null ? `${f0(b.knee)}° <small>${z ? esc(z.label) : ''}</small>` : '—'); }
+  P('#bzFat', b.fatigue, 'Zmęczenie', `${b.vloss != null ? (b.vloss >= .5 ? '−' : '') + f0(b.vloss) + '%' : '—'}${b.leanDelta != null && b.leanDelta >= 5 ? ` <small>+${f0(b.leanDelta)}°</small>` : ''}`);
+  P('#bzConf', b.conf?.label === 'niska' ? 'warn' : b.conf?.label === 'wysoka' ? 'ok' : '', 'Pewność', b.conf ? `${b.conf.pct}%` : '—');
 }
 function renderLive() {
   $('#vReps').textContent = liveReps.length + (planN() ? ' / ' + planN() : '');
@@ -786,7 +813,9 @@ function renderLive() {
   $('#kLast').className = 'kpi ' + lvlOfStatus(last?.status);
   $('#vLast').innerHTML = last ? `${last.score}<span class="u">pkt${last.vel ? ' · ' + f2(last.vel) + ' m/s' : ''}</span>` : '—';
   $('#chips').innerHTML = liveReps.map(r => `<span class="${r.status}">${r.n}</span>`).join('');
-  if (last) setCue(last.main ? last.main.tip : `Powtórzenie ${last.n}: dobrze`, last.main ? last.main.status : 'ok');
+  bioPills(last?.bio, ex);
+  const top = topIssue(last);
+  if (last) setCue(top ? top.tip : `Powtórzenie ${last.n}: dobrze`, top ? top.status : 'ok');
   else if (recording) setCue(cdEnd ? 'Podejdź do sztangi…' : 'Seria trwa – licznik ruszy po pierwszym powtórzeniu.', '');
   $('#livePath').innerHTML = liveReps.length ? barPathSVG(liveReps, ex, true) : '<p class="muted" style="font-size:13px;margin:0">Po pierwszym powtórzeniu pojawi się tu tor gryfu względem środka stopy.</p>';
 }
@@ -795,8 +824,22 @@ function renderSummary(set) {
   $('#sumBody').innerHTML = `<div class="sumscore ${cls}"><b>${s.score ?? '—'}</b><small>/ 100 · ${s.n} powt. · ${s.cnt.ok} dobrze, ${s.cnt.warn} do poprawy, ${s.cnt.bad} błąd</small></div>
     <div class="chips">${set.reps.map(r => `<span class="${r.status}">${r.n}</span>`).join('')}</div>
     <p class="sumtxt"><b>Najważniejsze:</b> ${esc(s.mainIssue ? s.mainIssue.tip : 'wszystkie powtórzenia poprawne – tak trzymaj.')}</p>
-    <p class="sumtxt">${esc(s.advice || '')}${s.est1rm ? ` Szacowane 1RM: <b>${kg(s.est1rm)}</b>.` : ''}${s.nextWeight && set.weight ? ` Następna seria: <b>${kg(s.nextWeight)}</b>.` : ''}</p>`;
+    <p class="sumtxt">${esc(s.advice || '')}${s.est1rm ? ` Szacowane 1RM: <b>${kg(s.est1rm)}</b>.` : ''}${s.nextWeight && set.weight ? ` Następna seria: <b>${kg(s.nextWeight)}</b>.` : ''}</p>
+    ${bioSummaryHTML(set)}`;
   $('#cardSum').hidden = false;
+}
+
+function bioSummaryHTML(set) {
+  const b = set.summary.bio; if (!b) return '';
+  const zl = st => `<em class="z z-${st}">${ZONE_LABEL[st] || '—'}</em>`;
+  const rows = [];
+  if (b.shearPeak != null) rows.push(`<li><b>Kręgosłup L4/L5</b> ścinanie do ${b.shearPeak} N ${zl(b.shearSt)} · ściskanie do ${f1(b.compPeak / 1000)} kN (${f1(b.compPeak / 3400)}× odn. NIOSH)</li>`);
+  else if (set.ex !== 'bench') rows.push(`<li><b>Kręgosłup</b> – wpisz ciężar, żeby oszacować obciążenie.</li>`);
+  if (b.kneeAvg != null) rows.push(`<li><b>Kolano</b> średnio ${f0(b.kneeAvg)}°, max ${f0(b.kneeMax)}° · ${esc(kneeZone(b.kneeMax)?.label || '')}</li>`);
+  if (b.trunkAvg != null) rows.push(`<li><b>${set.ex === 'press' ? 'Odchylenie' : 'Pochylenie'} tułowia</b> średnio ${f0(b.trunkAvg)}°${b.base ? ` (lżejsze serie ${String(b.base.weight).replace('.', ',')} kg: ${f0(b.base.trunk)}°)` : ''}</li>`);
+  rows.push(`<li><b>Zmęczenie</b> <em class="z z-${b.fatigue}">${FAT_LABEL[b.fatigue] || '—'}</em> · spadek prędkości do ${f0(b.vlossMax)}%${b.leanMax >= 5 ? `, pochylenie +${f0(b.leanMax)}°` : ''}</li>`);
+  rows.push(`<li><b>Pewność pomiaru</b> ${b.conf ?? '—'}% (${b.confLabel})${b.massEst ? ` · masa ciała szacowana: ${b.mass} kg` : ''}</li>`);
+  return `<ul class="biosum">${rows.join('')}</ul><p class="note" style="margin-top:4px">Obciążenia szacunkowo (model statyczny, Cholewicki 1991) – orientacyjnie, nie zastępuje trenera.</p>`;
 }
 
 /* =========================================================
@@ -813,6 +856,7 @@ function setEx(e) {
   $('#exDesc').innerHTML = EX[e].desc + `<br><span class="muted">${esc(EX[e].hint)}</span>`;
   $('#lblDev').textContent = e === 'bench' ? 'Gryf od linii barków' : 'Gryf od środka stopy';
   $('#lblMet').textContent = EX[e].met;
+  $('#thrV').value = String(S.thr?.vloss?.[e] ?? FATIGUE_DEFAULTS.vloss[e]); $('#lblThrV').textContent = `Próg zmęczenia – spadek prędkości (%) · ${EX[e].name.toLowerCase()}`;
   const hist = store.loadHist().filter(h => h.ex === e), sug = hist[0]?.summary?.nextWeight;
   $('#weight').value = S.weights[e] ?? '';
   $('#weight').placeholder = sug ? `sugerowane ${String(sug).replace('.', ',')}` : 'np. 100';
@@ -837,6 +881,12 @@ function initSettings() {
   $('#weight').onchange = e => { const v = e.target.value.replace(/[^\d.,]/g, ''); e.target.value = v; if (v) S.weights[ex] = v; else delete S.weights[ex]; saveS(); };
   const step = d => { const E = EX[ex], cur_ = weightN() ?? 0; const v = Math.max(0, cur_ + d * (E.step || 5)); $('#weight').value = v ? String(v).replace('.', ',') : ''; $('#weight').onchange({ target: $('#weight') }); };
   $('#wMinus').onclick = () => step(-1); $('#wPlus').onclick = () => step(1);
+  // v2.2: masa ciała i progi zmęczenia (wartości startowe do walidacji)
+  $('#mass').value = S.mass || ''; $('#thrL').value = String(S.thr.lean);
+  $('#mass').onchange = e => { const v = e.target.value.replace(',', '.').replace(/[^\d.]/g, ''); S.mass = v; e.target.value = v.replace('.', ','); saveS(); };
+  $('#thrV').onchange = e => { const v = clamp(parseFloat(e.target.value.replace(',', '.')) || FATIGUE_DEFAULTS.vloss[ex], 5, 60); S.thr.vloss[ex] = v; e.target.value = String(v); saveS(); };
+  $('#thrL').onchange = e => { const v = clamp(parseFloat(e.target.value.replace(',', '.')) || FATIGUE_DEFAULTS.lean, 5, 30); S.thr.lean = v; e.target.value = String(v); saveS(); };
+  $('#thrReset').onclick = () => { S.thr = { vloss: { ...FATIGUE_DEFAULTS.vloss }, lean: FATIGUE_DEFAULTS.lean }; saveS(); $('#thrL').value = String(S.thr.lean); $('#thrV').value = String(S.thr.vloss[ex]); toast('Przywrócono progi startowe.'); };
 }
 
 /* =========================================================
@@ -849,7 +899,7 @@ async function loadResources() {
 }
 function renderReport(set) {
   $('#reportEmpty').hidden = !!set; $('#report').hidden = !set;
-  if (set) $('#report').innerHTML = reportHTML(set, { logoSvg, name: S.name });
+  if (set) $('#report').innerHTML = reportHTML(set, { logoSvg, name: S.name, history: store.loadHist() });
 }
 async function deliver(name, blob) {
   try {
@@ -871,7 +921,7 @@ function initReport() {
   $('#sumReport').onclick = () => { renderReport(lastSet); openTab('report'); };
   $('#shareBtn').onclick = () => {
     if (!lastSet) { toast('Brak raportu – zrób serię albo wczytaj film.'); return; }
-    const doc = `<!doctype html><html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="author" content="Wojciech Wieczorek"><title>Raport techniki – ${esc(EX[lastSet.ex].name)}</title><style>body{margin:0;background:#f4f6f8;padding:12px}${reportCss}</style></head><body><div id="report" style="max-width:900px;margin:0 auto">${reportHTML(lastSet, { logoSvg, name: S.name })}</div></body></html>`;
+    const doc = `<!doctype html><html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="author" content="Wojciech Wieczorek"><title>Raport techniki – ${esc(EX[lastSet.ex].name)}</title><style>body{margin:0;background:#f4f6f8;padding:12px}${reportCss}</style></head><body><div id="report" style="max-width:900px;margin:0 auto">${reportHTML(lastSet, { logoSvg, name: S.name, history: store.loadHist() })}</div></body></html>`;
     deliver(fname(lastSet, 'html'), new Blob([doc], { type: 'text/html' }));
   };
   $('#printBtn').onclick = () => { if (!lastSet) { toast('Brak raportu.'); return; } renderReport(lastSet); setTimeout(() => window.print(), 80); };
@@ -880,8 +930,12 @@ function initReport() {
     const set = lastSet, ppc = set.ppc;
     const head = 'czas_s;gryf_x_cm;gryf_y_cm;srodek_stopy_x_cm;kolano_zgiecie;biodro_kat;tulow_od_pionu;lokiec';
     const rows = set.samples.map(s => [s.t.toFixed(3), (s.bx / ppc).toFixed(1), (-s.by / ppc).toFixed(1), (s.mfx / ppc).toFixed(1), s.kneeFlex?.toFixed(1), s.hipAng?.toFixed(1), s.torso?.toFixed(1), s.elbow?.toFixed(1)].map(v => String(v ?? '').replace('.', ',')).join(';'));
-    const reps = ['', 'powtorzenie;ocena;punkty;zakres_cm;predkosc_m_s;' + (set.reps[0]?.checks.map(c => c.key).join(';') || ''),
-      ...set.reps.map(r => [r.n, r.status, r.score, f1(r.rom), f2(r.vel), ...r.checks.map(c => c.value == null ? '' : String(c.value).replace('.', ','))].join(';'))];
+    const num = v => v == null || !isFinite(v) ? '' : String(v).replace('.', ',');
+    const bioCols = 'ciezar_kg;masa_ciala_kg;tulow_max_st;kolano_max_st;strefa_kolana;moment_L4L5_Nm;sciskanie_L4L5_N;sciskanie_x_NIOSH;scinanie_L4L5_N;strefa_scinania;spadek_predkosci_proc;przyrost_pochylenia_st;zmeczenie;chwyt_x_barki;pewnosc_proc;uwaga_bezpieczenstwa';
+    const bioRow = r => { const b = r.bio || {}, L = b.load || {}; return [num(set.weight), num(b.mass), num(b.trunk), num(b.knee), b.kneeZone || '', num(L.moment), num(L.comp), num(L.compRatio), num(L.shear), L.shearSt || '', num(b.vloss), num(b.leanDelta), b.fatigue || '', num(b.grip), num(b.conf?.pct), r.safety ? r.safety.cue : ''].join(';'); };
+    const reps = ['', 'powtorzenie;ocena;punkty;zakres_cm;predkosc_m_s;' + (set.reps[0]?.checks.map(c => c.key).join(';') || '') + ';' + bioCols,
+      ...set.reps.map(r => [r.n, r.status, r.score, f1(r.rom), f2(r.vel), ...r.checks.map(c => c.value == null ? '' : String(c.value).replace('.', ',')), bioRow(r)].join(';')),
+      '', '# obciazenia szacunkowo (model statyczny Cholewicki 1991) – orientacyjnie; strefy scinania wg Gallagher & Marras 2012, odniesienie sciskania NIOSH 3400 N'];
     deliver(fname(set, 'csv'), new Blob(['\ufeff' + [head, ...rows, ...reps].join('\n')], { type: 'text/csv' }));
   };
 }
@@ -894,7 +948,9 @@ function renderHist() {
   box.innerHTML = a.length ? '' : '<p class="muted" style="margin:0;font-size:14px">Brak zapisanych serii.</p>';
   a.forEach(e => {
     const d = new Date(e.date), s = e.summary, el = document.createElement('div'); el.className = 'hi';
+    const hb = s.bio;
     el.innerHTML = `<b>${esc(EX[e.ex]?.name || e.ex)}</b> · ${e.weight ? kg(e.weight) + ' × ' : ''}${s.n} · <span class="muted">${fmtDate(e.date)}${e.setNo ? ' · seria ' + e.setNo + (e.sets ? '/' + e.sets : '') : ''}</span>
+      ${hb ? `<div class="muted" style="font-size:12.5px;margin-top:4px">${hb.trunkAvg != null ? `tułów ${f0(hb.trunkAvg)}° · ` : ''}${hb.kneeAvg != null ? `kolano ${f0(hb.kneeAvg)}° · ` : ''}${hb.velAvg != null ? `${f2(hb.velAvg)} m/s · ` : ''}${hb.shearPeak != null ? `L4/L5 ${hb.shearPeak} N` : ''}</div>` : ''}
       <div class="chips" style="margin-top:6px">${e.reps.map(r => `<span class="${r.status}">${r.n}</span>`).join('')}</div>
       <div class="muted" style="font-size:13px;margin-top:6px">Ocena ${s.score ?? '—'}/100${s.mainIssue ? ' · ' + esc(s.mainIssue.label.toLowerCase()) : ''}</div>
       <div class="r"><button class="btn small" data-a="open">Raport</button><button class="btn small" data-a="pdf">PDF</button><button class="btn small" data-a="del">Usuń</button></div>`;
@@ -909,6 +965,8 @@ function renderHist() {
     return `<tr><td>${EX[k].name}</td><td>${l.length}</td><td>${best ? kg(best) : '—'}</td><td>${sc.length ? Math.round(sc.reduce((x, y) => x + y, 0) / sc.length) : '—'}</td></tr>`;
   }).join('');
   $('#prTbl').innerHTML = rows ? `<tr><th>Ćwiczenie</th><th>Serie</th><th>Max 1RM</th><th>Ocena (5 ost.)</th></tr>${rows}` : '<tr><td class="muted">Brak danych – zrób pierwszą serię.</td></tr>';
+  const le = Object.keys(EX).map(k => { const t = loadEffect(a, k); return t.length >= 1 ? `<h3 class="leh">${esc(EX[k].name)}</h3>` + loadEffectHTML(t, k, true) : ''; }).join('');
+  $('#loadEff').innerHTML = le || '<p class="muted" style="margin:0;font-size:14px">Zrób serie z wpisanym ciężarem – zobaczysz tu, jak ciężar zmienia ocenę, pochylenie tułowia i prędkość.</p>';
   const pend = store.oldPending();
   $('#oldBar').hidden = !pend;
   if (pend) $('#oldTxt').textContent = `W tej przeglądarce są serie z poprzedniej aplikacji „BikeRc Siła” (${pend}). Możesz je skopiować tutaj – oryginały zostaną nietknięte.`;
@@ -939,6 +997,7 @@ function openTab(t) {
 let deferredInstall = null;
 function initMisc() {
   $$('#tabs button').forEach(b => b.onclick = () => openTab(b.dataset.t));
+  $('#helpSrc').innerHTML = sourcesHTML();
   $('#helpEx').innerHTML = Object.keys(EX).map(k => `<li><b>${esc(EX[k].name)}.</b> ${EX[k].desc} <span class="muted">${esc(EX[k].hint)}</span></li>`).join('');
   addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstall = e; $('#btn-install').hidden = false; });
   $('#btn-install').onclick = async () => { if (!deferredInstall) return; deferredInstall.prompt(); await deferredInstall.userChoice.catch(() => {}); deferredInstall = null; $('#btn-install').hidden = true; };
@@ -954,7 +1013,7 @@ if (store.oldPending() && !sessionStorage.getItem('ct_oldtoast') && sessionStora
 
 /* hak do testów automatycznych (?test) */
 if (TEST) window.__ct = {
-  voice, trainer, S, EX, store, analyzeRep, buildSetData, reportHTML, makePdf,
+  voice, trainer, S, EX, store, analyzeRep, buildSetData, reportHTML, makePdf, annotateSet, renderHist, setEx,
   snapNow() { grabSnap(); return snapCanvas.toDataURL('image/jpeg', .72); },
   PRIV, get cur() { return cur; }, get pts() { return pts; }, get src() { return src; }, setPrivacy, get landmarker() { return landmarker; },
   get samples() { return samples; }, get liveReps() { return liveReps; }, get sess() { return sess; }, get rest() { return rest; }, get recording() { return recording; }, get lastSet() { return lastSet; },
